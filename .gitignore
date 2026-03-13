@@ -1,0 +1,7 @@
+*.png
+*.jpg
+*.jpeg
+*.identity.lbh
+*.signature
+*.manifest.json
+__pycache__/
