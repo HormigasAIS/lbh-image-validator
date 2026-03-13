@@ -1,0 +1,6 @@
+*.priv.pem
+*.signature
+*.identity.lbh
+*.manifest.json
+__pycache__/
+*.pyc
