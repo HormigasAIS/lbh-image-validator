@@ -6,6 +6,9 @@ CLHQ / HormigasAIS 2026
 """
 
 import hashlib, json, os, time, urllib.request, tempfile
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from hormiga_slack import hormiga_slack, inicializar
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs
 
@@ -23,6 +26,26 @@ def log(msg):
     os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
     with open(LOG_FILE, "a") as f:
         f.write(linea + "\n")
+
+def notificar_webhook(resultado, url, user):
+    """Envía resultado al canal #lbh-validations via webhook"""
+    import urllib.request, json, os
+    webhook = os.environ.get("SLACK_WEBHOOK", "")
+    if not webhook:
+        return
+    icon = "✅" if resultado["estado"] == "VALIDADO" else "⚠️"
+    texto = (f"{icon} *{resultado['estado']}* | "
+             f"`{url[:50]}` | @{user}")
+    try:
+        data = json.dumps({"text": texto}).encode()
+        req = urllib.request.Request(
+            webhook,
+            data=data,
+            headers={"Content-Type": "application/json"}
+        )
+        urllib.request.urlopen(req, timeout=5)
+    except Exception as e:
+        log(f"webhook error: {e}")
 
 def descargar_imagen(url):
     try:
@@ -157,14 +180,19 @@ class SlackHandler(BaseHTTPRequestHandler):
 
         resultado = verificar_imagen(ruta)
         log(f"resultado: {resultado['estado']}")
+        notificar_webhook(resultado, texto, user)
 
         try:
             os.unlink(ruta)
         except Exception:
             pass
 
-        self._respond(200, slack_response(resultado, texto),
-                      content_type="application/json")
+        feromona = hormiga_slack.procesar_validacion(texto, resultado, user)
+        if feromona:
+            respuesta = hormiga_slack.respuesta_slack(feromona, resultado, texto)
+        else:
+            respuesta = slack_response(resultado, texto)
+        self._respond(200, respuesta, content_type="application/json")
 
     def _respond(self, code, body, content_type="application/json"):
         self.send_response(code)
@@ -175,6 +203,7 @@ class SlackHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 def main():
+    inicializar()
     log(f"HormigasAIS Slack Bot iniciando en :{PORT}")
     log(f"  POST /validate  — comando /lbh-check")
     log(f"  GET  /health    — estado del nodo")
